@@ -50,6 +50,11 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Apache HttpComponents: necesario para que RestTemplate soporte PATCH -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+        </dependency>
         <!-- SIN spring-data-jpa ni postgresql: el BFF no toca la BD -->
     </dependencies>
 
