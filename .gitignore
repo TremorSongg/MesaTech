@@ -1,4 +1,13 @@
 # Secretos - NUNCA commitear
+credenciales/
+*.pem
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/terraform.tfvars
+
+# Archivos temporales de Office
+~$*
 .env
 *.env.local
 *.env.production

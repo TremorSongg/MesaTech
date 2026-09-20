@@ -1,0 +1,9 @@
+# Copiar este archivo a terraform.tfvars y completar los valores
+# cp terraform.tfvars.example terraform.tfvars
+
+# Azure AD - visibles en portal.azure.com > App registrations > api-cloud-native
+azure_client_id = "12d7d824-41ad-4877-a98b-55eab275d438"
+azure_tenant_id = "613635f2-8b4f-48ef-aaa3-834b249129a8"
+
+# Base de datos PostgreSQL
+db_password = "REEMPLAZAR_CON_PASSWORD_REAL"
