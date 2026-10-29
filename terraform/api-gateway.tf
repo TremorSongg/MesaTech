@@ -31,13 +31,13 @@ resource "aws_apigatewayv2_integration" "backend" {
   api_id             = aws_apigatewayv2_api.main.id
   integration_type   = "HTTP_PROXY"
   integration_method = "ANY"
-  integration_uri    = "http://${aws_eip.backend.public_ip}:8080/"
+  integration_uri    = "http://${aws_eip.bff.public_ip}:8080/"
 
   request_parameters = {
     "overwrite:path" = "$request.path"
   }
 
-  depends_on = [aws_eip_association.backend]
+  depends_on = [aws_eip_association.bff]
 }
 
 # Integracion al frontend EC2 (ruta $default)

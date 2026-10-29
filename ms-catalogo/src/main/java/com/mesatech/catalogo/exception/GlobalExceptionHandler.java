@@ -1,6 +1,7 @@
 package com.mesatech.catalogo.exception;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -13,6 +14,25 @@ import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    // La categoria ya esta en RDS pero el evento no se confirmo: no se afirma que se haya revertido
+    @ExceptionHandler(PublicacionEventoException.class)
+    public ResponseEntity<Map<String, Object>> handlePublicacion(PublicacionEventoException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", LocalDateTime.now().toString());
+        body.put("status", HttpStatus.BAD_GATEWAY.value());
+        body.put("error", "La categoria se guardo en el catalogo, pero no se pudo confirmar su publicacion "
+                + "en RabbitMQ; Solicitudes podria no recibirla. Detalle: " + ex.getMessage());
+        body.put("categoriaId", ex.getCategoriaId());
+        body.put("eventId", ex.getEventId());
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
+    }
+
+    // Rol insuficiente (@PreAuthorize): debe ser 403 y no caer en el manejador generico de RuntimeException
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
+        return buildResponse(HttpStatus.FORBIDDEN, "Acceso denegado: no tienes permisos para esta operacion");
+    }
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(RuntimeException ex) {

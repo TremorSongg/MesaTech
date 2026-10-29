@@ -11,7 +11,7 @@ systemctl enable docker
 systemctl start docker
 
 # Clonar repositorio
-git clone ${github_repo} /app
+git clone --branch ${github_branch} --depth 1 ${github_repo} /app
 cd /app
 
 # Aplicar fix del scope (seguridad: corregir typo si el repo aun lo tiene)

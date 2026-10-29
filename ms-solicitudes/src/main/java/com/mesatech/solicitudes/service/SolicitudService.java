@@ -4,7 +4,10 @@ import com.mesatech.solicitudes.dto.CambioEstadoRequest;
 import com.mesatech.solicitudes.dto.PagedSolicitudesResponse;
 import com.mesatech.solicitudes.dto.SolicitudRequest;
 import com.mesatech.solicitudes.dto.SolicitudResponse;
+import com.mesatech.solicitudes.entity.CategoriaLocal;
 import com.mesatech.solicitudes.entity.EstadoSolicitud;
+import com.mesatech.solicitudes.exception.CategoriaNoDisponibleException;
+import com.mesatech.solicitudes.repository.CategoriaLocalRepository;
 import com.mesatech.solicitudes.entity.Solicitud;
 import com.mesatech.solicitudes.repository.SolicitudRepository;
 import lombok.RequiredArgsConstructor;
@@ -25,9 +28,16 @@ public class SolicitudService {
 
     private final SolicitudRepository solicitudRepository;
     private final EstadoMachine estadoMachine;
+    private final CategoriaLocalRepository categoriaLocalRepository;
 
     @Transactional
     public SolicitudResponse crearSolicitud(SolicitudRequest request, String usuarioSolicitante) {
+        // La categoria debe existir en la copia local (recibida por RabbitMQ)
+        CategoriaLocal categoria = categoriaLocalRepository.findByCategoriaId(request.getCategoriaId())
+                .filter(CategoriaLocal::isActivo)
+                .orElseThrow(() -> new CategoriaNoDisponibleException(request.getCategoriaId()));
+        request.setCategoriaNombre(categoria.getNombre());
+
         Solicitud solicitud = new Solicitud();
         solicitud.setTitulo(request.getTitulo());
         solicitud.setDescripcion(request.getDescripcion());

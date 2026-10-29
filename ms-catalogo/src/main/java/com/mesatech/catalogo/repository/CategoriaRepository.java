@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface CategoriaRepository extends JpaRepository<Categoria, Long> {
     List<Categoria> findByActivoTrue();
+
+    List<Categoria> findByNombreIn(List<String> nombres);
 }
