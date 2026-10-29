@@ -20,6 +20,15 @@ cd "/opt/mesatech/src/$SERVICE"
 MAVEN_OPTS="-Xmx768m" mvn -B -q -DskipTests package
 cp target/*.jar "/opt/mesatech/$SERVICE.jar"
 
+# Mantiene al dia el registro de versiones (evidencia del informe)
+{
+  echo "servicio: $SERVICE"
+  echo "commit:   $COMMIT"
+  java -version 2>&1 | head -1
+  mvn -version | head -1
+  grep -m1 -A1 "<artifactId>spring-boot-starter-parent" pom.xml | tail -1 | sed 's/^ *//'
+} > /opt/mesatech/versions.txt
+
 systemctl restart "$SERVICE"
 sleep 5
 echo "$SERVICE redesplegado (commit $COMMIT): $(systemctl is-active "$SERVICE")"

@@ -14,6 +14,9 @@ Consulta SQL en una EC2 (el script lee las credenciales del servidor, no las mue
 sudo bash /opt/mesatech/src/scripts/db-query.sh ms-catalogo    "SELECT id, nombre FROM categorias;"             # en A
 sudo bash /opt/mesatech/src/scripts/db-query.sh ms-solicitudes "SELECT categoria_id, nombre, event_id FROM categorias_locales;"   # en B
 ```
+Los logs de journalctl están en **UTC** (Chile = UTC-3 en esta fecha). Si un `grep` con `--since` no devuelve
+nada, la ventana de tiempo es demasiado corta: ampliarla (`-30min`) o buscar por `eventId`.
+
 Estado en tiempo real de la cola (en C; la consola web se refresca cada ~5 s):
 ```bash
 docker exec rabbitmq rabbitmqctl list_queues -p mesatech name messages_ready messages_unacknowledged consumers
@@ -32,6 +35,17 @@ hostname; hostname -I
 systemctl status ms-catalogo --no-pager | head -5        # en B: ms-solicitudes
 sudo bash /opt/mesatech/src/scripts/db-query.sh ms-catalogo "SHOW TABLES;"   # en B: ms-solicitudes
 ```
+En la **EC2 C** (broker), para completar la identificación de las tres máquinas (criterio C1):
+```bash
+TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id; echo
+hostname; hostname -I
+cat /etc/os-release | head -2
+cd ~/rabbitmq && docker compose ps
+```
+**Esperado en C:** instance ID `i-0896b7091f80f3214`, hostname `mesatech-rabbitmq`, Ubuntu 24.04 y el contenedor
+`rabbitmq` en estado `healthy`. Es una tercera máquina, distinta de A y B.
+
 **Esperado:** instance IDs distintos (A `i-0f835f59c7ed6e716`, B `i-010d45dd009be0b79`), endpoints RDS distintos
 (`mesatech-rds-catalogo…` y `mesatech-rds-solicitudes…`), tablas `categorias`/`prioridades` en A y
 `categorias_locales`/`solicitudes` en B.
@@ -41,8 +55,9 @@ groups de ambas RDS (3306 solo desde el SG de su EC2).
 ## P2. Flujo completo
 1. En el sitio, con usuario **ADMINISTRADOR**, Catálogo → **+ Nueva** → nombre nuevo (ej. `Telefonia`) → guardar.
 2. En A: `sudo bash /opt/mesatech/src/scripts/db-query.sh ms-catalogo "SELECT id, nombre FROM categorias ORDER BY id DESC LIMIT 3;"`
-3. En A: `journalctl -u ms-catalogo --since "-2min" | grep "Evento publicado"` (anotar `eventId` y `categoriaId`).
-4. En B: `journalctl -u ms-solicitudes --since "-2min" | grep -E "Evento recibido|Categoria guardada"` (mismo `eventId`).
+3. En A: `journalctl -u ms-catalogo --since "-10min" | grep "Evento publicado"` (anotar `eventId` y `categoriaId`).
+4. En B, buscando por el `eventId` anotado en el paso 3 (así no depende de cuánto tiempo pasó):
+   `journalctl -u ms-solicitudes | grep <eventId>` (muestra "Evento recibido" y "Categoria guardada").
 5. En B: `sudo bash /opt/mesatech/src/scripts/db-query.sh ms-solicitudes "SELECT categoria_id, nombre, event_id FROM categorias_locales ORDER BY categoria_id DESC LIMIT 3;"`
 6. En el sitio: **Nueva solicitud** → la categoría aparece en el selector → crear la solicitud.
 7. En B: `... ms-solicitudes "SELECT id, titulo, categoria_id, categoria_nombre, estado FROM solicitudes ORDER BY id DESC LIMIT 3;"`
@@ -56,14 +71,17 @@ la solicitud queda con la categoría recibida. **Relación a documentar:** HTTP 
 2. En el sitio, crear otra categoría (ej. `Redes_P3`).
 3. En A: consultar que está en `categorias` (RDS Catálogo).
 4. En C: `rabbitmqctl list_queues …` → **ready=1, consumers=0**.
-5. En B: `… ms-solicitudes "SELECT * FROM categorias_locales WHERE nombre='Redes_P3';"` → vacío.
+5. En B (el cliente `mysql` no imprime nada cuando hay 0 filas, por eso se usa un conteo):
+   `sudo bash /opt/mesatech/src/scripts/db-query.sh ms-solicitudes "SELECT COUNT(*) AS filas FROM categorias_locales WHERE nombre='Redes_P3';"` → `filas = 0`.
+   Conviene listar también las categorías existentes: `... "SELECT categoria_id, nombre FROM categorias_locales ORDER BY categoria_id;"`.
+6. En B: `systemctl status ms-solicitudes --no-pager | head -4` → `inactive (dead)`.
 
 **Evidencia opcional del mensaje (sin retirarlo):** consola → Queues → `solicitudes.catalogo.queue` → *Get messages*
 con **Ack mode = Nack message requeue true**. No usar la opción que confirma (retiraría el mensaje).
 
 ## P4. Consumo diferido
 1. En B: `sudo systemctl start ms-solicitudes`
-2. En B: `journalctl -u ms-solicitudes --since "-1min" | grep -E "Evento recibido|Categoria guardada"`
+2. En B: `journalctl -u ms-solicitudes --since "-10min" | grep -E "Evento recibido|Categoria guardada"`
 3. En C: `rabbitmqctl list_queues …` → **ready=0, unacked=0, consumers=1**.
 4. En B: la fila de `Redes_P3` ahora existe en `categorias_locales`.
 
@@ -79,6 +97,8 @@ La cola vacía por sí sola no basta: mostrar también la fila guardada y el log
    docker compose up -d --force-recreate rabbitmq
    docker inspect -f '{{.Id}}' rabbitmq | cut -c1-12            # id nuevo (distinto)
    docker inspect -f '{{.Config.Hostname}}' rabbitmq            # mismo hostname
+   # El broker tarda ~20-30 s en arrancar tras recrear el contenedor: esperar a que responda
+   until docker exec rabbitmq rabbitmq-diagnostics -q ping >/dev/null 2>&1; do sleep 3; done; docker compose ps
    docker exec rabbitmq rabbitmqctl list_vhosts
    docker exec rabbitmq rabbitmqctl list_exchanges -p mesatech name type durable
    docker exec rabbitmq rabbitmqctl list_queues -p mesatech name messages_ready consumers
@@ -92,14 +112,14 @@ La cola vacía por sí sola no basta: mostrar también la fila guardada y el log
 3. Cuando levanten (`systemctl is-active …`, ~15 s): repetir las consultas.
 
 **Esperado:** mismos registros. Catálogo **no republica** eventos al reiniciar (las semillas se marcaron
-como publicadas una sola vez): `journalctl -u ms-catalogo --since "-1min" | grep -c "Evento publicado"` → 0.
+como publicadas una sola vez): `journalctl -u ms-catalogo --since "-10min" | grep -c "Evento publicado"` → 0.
 
 ## P7. Fallo de publicación
 1. En C: `cd ~/rabbitmq && docker compose stop`
 2. En el sitio, crear una categoría (ej. `SinBroker`). **Esperado:** error controlado (502) que dice que la
    categoría pudo quedar guardada y que no se confirmó la publicación (tarda ~5 s por el timeout de conexión).
 3. En A: consultar `categorias` → `SinBroker` **sí está** en la RDS de Catálogo.
-4. En A: `journalctl -u ms-catalogo --since "-2min" | grep "Fallo de publicacion"`
+4. En A: `journalctl -u ms-catalogo --since "-10min" | grep "Fallo de publicacion"`
 5. En C: `docker compose start`; esperar a que esté `healthy` (`docker compose ps`).
 6. En B: `categorias_locales` **no** tiene `SinBroker`.
 
