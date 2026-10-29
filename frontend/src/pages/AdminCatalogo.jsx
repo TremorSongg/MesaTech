@@ -9,6 +9,19 @@ export default function AdminCatalogo() {
   const [loading, setLoading] = useState(true);
   const [modalCat, setModalCat] = useState(null); // null | {id?, nombre, descripcion, activo}
   const [savingCat, setSavingCat] = useState(false);
+  // Categorías ya disponibles en Solicitudes (copia local) y las recién creadas que esperan sincronizar
+  const [localIds, setLocalIds] = useState(new Set());
+  const [pendientes, setPendientes] = useState([]);
+
+  const cargarLocales = useCallback(async () => {
+    try {
+      const locales = await api.get('/v1/solicitudes/categorias');
+      setLocalIds(new Set(locales.map((c) => c.id)));
+      return locales;
+    } catch {
+      return null;
+    }
+  }, []);
 
   const cargar = useCallback(async () => {
     try {
@@ -19,12 +32,26 @@ export default function AdminCatalogo() {
       ]);
       setCategorias(cats);
       setPrioridades(prios);
+      await cargarLocales();
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  // Mientras haya categorías nuevas sin sincronizar, consulta Solicitudes cada 2 s (máx. 60 s)
+  useEffect(() => {
+    if (pendientes.length === 0) return undefined;
+    const inicio = Date.now();
+    const timer = setInterval(async () => {
+      const locales = await cargarLocales();
+      const ids = new Set((locales || []).map((c) => c.id));
+      setPendientes((p) => p.filter((id) => !ids.has(id)));
+      if (Date.now() - inicio > 60000) setPendientes([]);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [pendientes.length > 0]);
 
   const abrirNuevaCat = () => setModalCat({ nombre: '', descripcion: '', activo: true });
   const abrirEditCat = (c) => setModalCat({ ...c });
@@ -36,12 +63,16 @@ export default function AdminCatalogo() {
       if (modalCat.id) {
         await api.put(`/v1/catalogo/categorias/${modalCat.id}`, modalCat);
       } else {
-        await api.post('/v1/catalogo/categorias', modalCat);
+        const creada = await api.post('/v1/catalogo/categorias', modalCat);
+        // La publicación en RabbitMQ fue confirmada; Solicitudes la recibe de forma asíncrona
+        setPendientes((p) => [...p, creada.id]);
       }
       setModalCat(null);
       cargar();
     } catch (e) {
       alert(e.response?.data?.error || 'Error al guardar.');
+      // Si el catálogo la guardó pero no se publicó el evento, igual aparece en la lista
+      cargar();
     } finally {
       setSavingCat(false);
     }
@@ -70,7 +101,7 @@ export default function AdminCatalogo() {
               <div className={styles.tableWrap}>
                 <table className={styles.table}>
                   <thead>
-                    <tr><th>#</th><th>Nombre</th><th>Estado</th><th></th></tr>
+                    <tr><th>#</th><th>Nombre</th><th>Estado</th><th>En Solicitudes</th><th></th></tr>
                   </thead>
                   <tbody>
                     {categorias.map((c) => (
@@ -84,6 +115,15 @@ export default function AdminCatalogo() {
                           <span className={c.activo ? styles.badgeActive : styles.badgeInactive}>
                             {c.activo ? 'Activa' : 'Inactiva'}
                           </span>
+                        </td>
+                        <td>
+                          {localIds.has(c.id) ? (
+                            <span className={styles.badgeActive}>Disponible</span>
+                          ) : pendientes.includes(c.id) ? (
+                            <span className={styles.badgeInactive}>Sincronizando…</span>
+                          ) : (
+                            <span className={styles.badgeInactive}>No sincronizada</span>
+                          )}
                         </td>
                         <td>
                           <button className={styles.btnGhost} onClick={() => abrirEditCat(c)}>Editar</button>

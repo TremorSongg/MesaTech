@@ -17,8 +17,10 @@ export default function NuevaSolicitud() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    // Las categorías salen de la copia local de Solicitudes (sincronizada por RabbitMQ);
+    // las prioridades siguen viniendo del catálogo.
     Promise.all([
-      api.get('/v1/catalogo/categorias'),
+      api.get('/v1/solicitudes/categorias'),
       api.get('/v1/catalogo/prioridades'),
     ]).then(([cats, prios]) => {
       setCategorias(cats.filter((c) => c.activo));
@@ -79,6 +81,11 @@ export default function NuevaSolicitud() {
                   <option key={c.id} value={c.id}>{c.nombre}</option>
                 ))}
               </select>
+              {categorias.length === 0 && (
+                <span style={{ fontSize: 12, color: '#6B7280' }}>
+                  Aún no hay categorías disponibles en Solicitudes. Se sincronizan desde el catálogo de forma asíncrona.
+                </span>
+              )}
             </div>
 
             <div className={styles.fg}>

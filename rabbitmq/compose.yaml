@@ -1,0 +1,30 @@
+# RabbitMQ de MesaTech Cloud (EC2 C). Se instala desde cero con Docker Compose.
+# Las credenciales vienen del archivo .env (no se versiona); ver .env.example.
+services:
+  rabbitmq:
+    # Imagen oficial con interfaz de administracion; etiqueta explicita (no "latest")
+    image: rabbitmq:3.13.7-management
+    container_name: rabbitmq
+    # Hostname estable: RabbitMQ guarda sus datos bajo el nombre del nodo (rabbit@<hostname>),
+    # si cambia al recrear el contenedor, el broker no encuentra los datos conservados.
+    hostname: rabbitmq-mesatech
+    restart: unless-stopped
+    environment:
+      # Usuario administrador del broker (solo para operar el panel y el script de configuracion)
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_ADMIN_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASSWORD}
+    ports:
+      - "5672:5672"     # AMQP: lo usan Catalogo y Solicitudes por red privada
+      - "15672:15672"   # Interfaz de administracion HTTP
+    volumes:
+      # Volumen persistente: conserva vhost, exchange, cola y mensajes persistentes tras recrear el contenedor
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  rabbitmq_data:

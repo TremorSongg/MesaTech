@@ -1,62 +1,101 @@
-version: '3.9'
+# Entorno local de desarrollo: todo el sistema en Docker Desktop.
+# En AWS cada pieza va en su propia EC2/RDS (ver terraform/); aqui se simula con contenedores.
+# Variables: archivo .env en esta carpeta (copiar de .env.example).
+# Todos los servicios comparten la red por defecto del proyecto (el compose de RabbitMQ no declara red propia).
+include:
+  # Mismo compose.yaml que se instala en la EC2 del broker
+  - path: rabbitmq/compose.yaml
+    env_file: .env
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: mesatech-postgres
+  # Equivalente local de la RDS de Catalogo
+  mysql-catalogo:
+    image: mysql:8.0
+    container_name: mesatech-mysql-catalogo
     environment:
-      POSTGRES_DB: mesatech
-      POSTGRES_USER: mesatech
-      POSTGRES_PASSWORD: mesatech_dev
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${CATALOGO_DB_NAME}
+      MYSQL_USER: ${CATALOGO_DB_USER}
+      MYSQL_PASSWORD: ${CATALOGO_DB_PASSWORD}
     ports:
-      - "5433:5432"
+      - "3307:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - mesatech-network
+      - mysql_catalogo_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mesatech"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 20s
+
+  # Equivalente local de la RDS de Solicitudes (instancia distinta, no un segundo esquema)
+  mysql-solicitudes:
+    image: mysql:8.0
+    container_name: mesatech-mysql-solicitudes
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${SOLICITUDES_DB_NAME}
+      MYSQL_USER: ${SOLICITUDES_DB_USER}
+      MYSQL_PASSWORD: ${SOLICITUDES_DB_PASSWORD}
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql_solicitudes_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   ms-catalogo:
     build:
       context: ./ms-catalogo
       dockerfile: Dockerfile
     container_name: mesatech-ms-catalogo
+    restart: on-failure
     ports:
       - "8092:8082"
     environment:
       - SPRING_PROFILES_ACTIVE=dev
-      - DB_URL=jdbc:postgresql://postgres:5432/mesatech
-      - DB_USER=mesatech
-      - DB_PASSWORD=mesatech_dev
+      - DB_URL=jdbc:mysql://mysql-catalogo:3306/${CATALOGO_DB_NAME}
+      - DB_USER=${CATALOGO_DB_USER}
+      - DB_PASSWORD=${CATALOGO_DB_PASSWORD}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST}
+      - RABBITMQ_USER=${RABBITMQ_PUBLICADOR_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PUBLICADOR_PASSWORD}
+      - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE}
+      - RABBITMQ_ROUTING_KEY=${RABBITMQ_ROUTING_KEY}
     depends_on:
-      postgres:
+      mysql-catalogo:
         condition: service_healthy
-    networks:
-      - mesatech-network
+      rabbitmq:
+        condition: service_healthy
 
   ms-solicitudes:
     build:
       context: ./ms-solicitudes
       dockerfile: Dockerfile
     container_name: mesatech-ms-solicitudes
+    restart: on-failure
     ports:
       - "8091:8081"
     environment:
       - SPRING_PROFILES_ACTIVE=dev
-      - DB_URL=jdbc:postgresql://postgres:5432/mesatech
-      - DB_USER=mesatech
-      - DB_PASSWORD=mesatech_dev
+      - DB_URL=jdbc:mysql://mysql-solicitudes:3306/${SOLICITUDES_DB_NAME}
+      - DB_USER=${SOLICITUDES_DB_USER}
+      - DB_PASSWORD=${SOLICITUDES_DB_PASSWORD}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST}
+      - RABBITMQ_USER=${RABBITMQ_CONSUMIDOR_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_CONSUMIDOR_PASSWORD}
+      - RABBITMQ_QUEUE=${RABBITMQ_QUEUE}
     depends_on:
-      postgres:
+      mysql-solicitudes:
         condition: service_healthy
-      ms-catalogo:
-        condition: service_started
-    networks:
-      - mesatech-network
+      rabbitmq:
+        condition: service_healthy
 
   bff:
     build:
@@ -72,8 +111,6 @@ services:
     depends_on:
       - ms-solicitudes
       - ms-catalogo
-    networks:
-      - mesatech-network
 
   frontend:
     build:
@@ -84,17 +121,12 @@ services:
       - "3001:3000"
     environment:
       - VITE_AUTH_ENABLED=false
-      - VITE_MOCK_ROLE=CLIENTE
+      - VITE_MOCK_ROLE=${VITE_MOCK_ROLE:-ADMINISTRADOR}
       - VITE_MOCK_NAME=Usuario Demo
       - VITE_MOCK_EMAIL=demo@empresa.cl
     depends_on:
       - bff
-    networks:
-      - mesatech-network
-
-networks:
-  mesatech-network:
-    driver: bridge
 
 volumes:
-  postgres_data:
+  mysql_catalogo_data:
+  mysql_solicitudes_data:

@@ -8,6 +8,7 @@ resource "aws_instance" "frontend" {
 
   user_data = templatefile("${path.module}/templates/frontend-userdata.sh.tpl", {
     github_repo     = var.github_repo
+    github_branch   = var.github_branch
     azure_client_id = var.azure_client_id
     azure_tenant_id = var.azure_tenant_id
     api_gateway_url = aws_apigatewayv2_api.main.api_endpoint

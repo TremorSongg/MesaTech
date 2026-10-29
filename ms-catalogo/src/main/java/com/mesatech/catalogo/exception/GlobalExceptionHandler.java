@@ -14,6 +14,19 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    // La categoria ya esta en RDS pero el evento no se confirmo: no se afirma que se haya revertido
+    @ExceptionHandler(PublicacionEventoException.class)
+    public ResponseEntity<Map<String, Object>> handlePublicacion(PublicacionEventoException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", LocalDateTime.now().toString());
+        body.put("status", HttpStatus.BAD_GATEWAY.value());
+        body.put("error", "La categoria se guardo en el catalogo, pero no se pudo confirmar su publicacion "
+                + "en RabbitMQ; Solicitudes podria no recibirla. Detalle: " + ex.getMessage());
+        body.put("categoriaId", ex.getCategoriaId());
+        body.put("eventId", ex.getEventId());
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(RuntimeException ex) {
         return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage());

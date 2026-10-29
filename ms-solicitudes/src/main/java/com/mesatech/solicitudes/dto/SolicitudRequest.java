@@ -18,7 +18,7 @@ public class SolicitudRequest {
     @NotNull(message = "La categoria es obligatoria")
     private Long categoriaId;
 
-    @NotBlank(message = "El nombre de la categoria es obligatorio")
+    // Informativo: el nombre real se toma de la copia local de categorias
     private String categoriaNombre;
 
     @NotNull(message = "La prioridad es obligatoria")

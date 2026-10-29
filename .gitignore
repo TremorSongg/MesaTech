@@ -4,6 +4,8 @@ credenciales/
 terraform/.terraform/
 terraform/terraform.tfstate
 terraform/terraform.tfstate.backup
+terraform/*.tfstate*
+terraform/tfplan
 terraform/terraform.tfvars
 
 # Archivos temporales de Office

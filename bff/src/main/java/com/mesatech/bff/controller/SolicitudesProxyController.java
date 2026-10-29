@@ -27,6 +27,12 @@ public class SolicitudesProxyController {
         return proxyService.forward(HttpMethod.POST, solicitudesUrl + "/v1/solicitudes", body, request);
     }
 
+    // Categorias locales de Solicitudes (copia recibida por RabbitMQ); todos los roles autenticados
+    @GetMapping("/v1/solicitudes/categorias")
+    public ResponseEntity<String> getCategorias(HttpServletRequest request) {
+        return proxyService.forward(HttpMethod.GET, solicitudesUrl + "/v1/solicitudes/categorias", null, request);
+    }
+
     @GetMapping("/v1/solicitudes/mias")
     public ResponseEntity<String> getMias(HttpServletRequest request) {
         String url = solicitudesUrl + "/v1/solicitudes/mias" + proxyService.buildQueryString(request);

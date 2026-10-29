@@ -5,6 +5,7 @@ import com.mesatech.catalogo.dto.CatalogoResponse;
 import com.mesatech.catalogo.dto.PrioridadRequest;
 import com.mesatech.catalogo.entity.Categoria;
 import com.mesatech.catalogo.entity.Prioridad;
+import com.mesatech.catalogo.publisher.CategoriaPublisher;
 import com.mesatech.catalogo.repository.CategoriaRepository;
 import com.mesatech.catalogo.repository.PrioridadRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ public class CatalogoService {
 
     private final CategoriaRepository categoriaRepository;
     private final PrioridadRepository prioridadRepository;
+    private final CategoriaPublisher categoriaPublisher;
 
     public CatalogoResponse getCatalogo() {
         CatalogoResponse response = new CatalogoResponse();
@@ -31,13 +33,17 @@ public class CatalogoService {
         return categoriaRepository.findByActivoTrue();
     }
 
-    @Transactional
+    // Sin @Transactional a proposito: save() hace commit antes de publicar, asi el consumidor nunca
+    // recibe el evento de una categoria que aun no esta confirmada en RDS. Guardar y publicar son
+    // operaciones separadas: si la publicacion falla, la categoria queda guardada (no hay rollback).
     public Categoria createCategoria(CategoriaRequest request) {
         Categoria categoria = new Categoria();
         categoria.setNombre(request.getNombre());
         categoria.setDescripcion(request.getDescripcion());
         categoria.setActivo(request.isActivo());
-        return categoriaRepository.save(categoria);
+        Categoria guardada = categoriaRepository.save(categoria);
+        categoriaPublisher.publicarCategoriaCreada(guardada);
+        return guardada;
     }
 
     @Transactional
