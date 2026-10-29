@@ -2,6 +2,7 @@ package com.mesatech.catalogo.config;
 
 import com.mesatech.catalogo.entity.Categoria;
 import com.mesatech.catalogo.entity.Prioridad;
+import com.mesatech.catalogo.publisher.CategoriaPublisher;
 import com.mesatech.catalogo.repository.CategoriaRepository;
 import com.mesatech.catalogo.repository.PrioridadRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,11 +20,40 @@ public class DataInitializer implements CommandLineRunner {
 
     private final CategoriaRepository categoriaRepository;
     private final PrioridadRepository prioridadRepository;
+    private final CategoriaPublisher categoriaPublisher;
+
+    private static final List<String> CATEGORIAS_SEMILLA =
+            List.of("Hardware", "Software", "Red", "Seguridad", "Accesos");
 
     @Override
     public void run(String... args) {
         seedCategorias();
         seedPrioridades();
+        publicarCategoriasSemilla();
+    }
+
+    // Las categorias semilla no pasan por la API, asi que nadie publico su evento y Solicitudes
+    // no las conoce. Se publican una sola vez (marca eventoPublicado), no en cada reinicio.
+    // Solo afecta a las semillas: una categoria creada por API cuyo evento fallo se deja como esta.
+    private void publicarCategoriasSemilla() {
+        List<Categoria> pendientes = categoriaRepository.findByNombreIn(CATEGORIAS_SEMILLA).stream()
+                .filter(c -> !Boolean.TRUE.equals(c.getEventoPublicado()))
+                .toList();
+        if (pendientes.isEmpty()) return;
+
+        log.info("Publicando evento de {} categorias semilla pendientes", pendientes.size());
+        for (Categoria c : pendientes) {
+            try {
+                categoriaPublisher.publicarCategoriaCreada(c);
+                c.setEventoPublicado(true);
+                categoriaRepository.save(c);
+            } catch (RuntimeException e) {
+                // El arranque no debe fallar si el broker aun no esta; se reintenta en el proximo inicio
+                log.warn("No se pudo publicar la categoria semilla '{}': {}. Se reintentara al reiniciar.",
+                        c.getNombre(), e.getMessage());
+                return;
+            }
+        }
     }
 
     private void seedCategorias() {

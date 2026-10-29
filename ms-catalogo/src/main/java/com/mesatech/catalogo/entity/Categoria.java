@@ -1,5 +1,6 @@
 package com.mesatech.catalogo.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -24,4 +25,9 @@ public class Categoria {
 
     @Column(nullable = false)
     private boolean activo = true;
+
+    // true cuando el broker confirmo el evento categoria.creada de esta categoria.
+    // null en filas anteriores a esta columna. Solo informativo, no se expone en la API.
+    @JsonIgnore
+    private Boolean eventoPublicado;
 }

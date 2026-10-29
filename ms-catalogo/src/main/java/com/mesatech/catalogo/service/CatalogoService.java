@@ -43,7 +43,9 @@ public class CatalogoService {
         categoria.setActivo(request.isActivo());
         Categoria guardada = categoriaRepository.save(categoria);
         categoriaPublisher.publicarCategoriaCreada(guardada);
-        return guardada;
+        // Solo si el broker confirmo; si falla, la excepcion sale antes y la marca queda sin definir
+        guardada.setEventoPublicado(true);
+        return categoriaRepository.save(guardada);
     }
 
     @Transactional
